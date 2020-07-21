@@ -27,12 +27,15 @@ import numpy as np
 import os
 from tensorboardX import SummaryWriter
 
+from sklearn.metrics import f1_score, accuracy_score
+
 
 @timer(name="train_model", logger=None)
 def train_model(model, dataloader, optimizer, criterion, scheduler, config: Config):
     model.train()
     epoch_loss = 0
     train_loader = dataloader
+    train_preds, train_true = torch.Tensor([]).to(config.device), torch.LongTensor([]).to(config.device)
     for batch_idx, (img_batch, labels) in enumerate(tqdm(train_loader)):
         img_batch = img_batch.to(config.device)
         labels = labels.to(config.device)
@@ -40,10 +43,6 @@ def train_model(model, dataloader, optimizer, criterion, scheduler, config: Conf
             img_batch = img_batch.half()
         optimizer.zero_grad()
         output = model(img_batch)
-        # if config.use_half:
-        #     output['logits'] = output['logits'].float()
-        #     output['multiclass_proba'] = output['multiclass_proba'].float()
-        #     output['logits'] = output['logits'].float()
         loss = criterion(output, labels)
         loss.backward()
         optimizer.step()
@@ -51,14 +50,25 @@ def train_model(model, dataloader, optimizer, criterion, scheduler, config: Conf
             scheduler.step()
         loss_value = loss.item()
         epoch_loss += loss_value
+
+        train_true = torch.cat([train_true, labels], 0)
+        train_preds = torch.cat([train_preds, output['multilabel_proba']], 0)
+
+    train_true = train_true.cpu().detach().numpy()
+    a = np.zeros(train_preds.shape)
+    train_preds_index = train_preds.cpu().detach().numpy() > 0.5
+    a[train_preds_index] = 1
+    train_score = f1_score(train_true, a, average='macro')
     epoch_loss = epoch_loss / len(train_loader)
-    return epoch_loss
+
+    return epoch_loss, train_score
 
 
 def evaluate_model(model, dataloader, criterion, device):
     model.eval()
     epoch_loss = 0
     val_loader = dataloader
+    val_preds, val_true = torch.Tensor([]).to(config.device), torch.LongTensor([]).to(config.device)
     with torch.no_grad():
         for batch_idx, (img_batch, labels) in enumerate(progress_bar(val_loader)):
             img_batch = img_batch.to(device)
@@ -66,16 +76,26 @@ def evaluate_model(model, dataloader, criterion, device):
             output = model(img_batch)
             loss = criterion(output, labels)
             epoch_loss += loss.item()
+
+            val_true = torch.cat([val_true, labels], 0)
+            val_preds = torch.cat([val_preds, output['multilabel_proba']], 0)
+
     epoch_loss = epoch_loss / len(val_loader)
-    return epoch_loss
+    val_true = val_true.cpu().detach().numpy()
+    b = np.zeros(val_preds.shape)
+    val_preds_index = val_preds.cpu().detach().numpy() > 0.5
+    b[val_preds_index] = 1
+    val_score = f1_score(val_true, b, average='macro')
+
+    return epoch_loss, val_score
 
 
 def train(index, model, dataloaders, optimizer, criterion, scheduler, writer, config: Config):
     min_loss = float('inf')
     best_model_wts = copy.deepcopy(model.state_dict())
     for epoch in range(config.N_EPOCH):
-        train_loss = train_model(model, dataloaders['train'], optimizer, criterion, scheduler, config)
-        val_loss = evaluate_model(model, dataloaders['val'], criterion, config.device)
+        train_loss, train_score = train_model(model, dataloaders['train'], optimizer, criterion, scheduler, config)
+        val_loss, val_score = evaluate_model(model, dataloaders['val'], criterion, config.device)
         print("train_loss:{} val_loss:{}".format(train_loss, val_loss))
         if val_loss < min_loss:
             min_loss = val_loss
@@ -85,6 +105,9 @@ def train(index, model, dataloaders, optimizer, criterion, scheduler, writer, co
         if config.scheduler_type == 'Plateau':
             scheduler.step(val_loss)
         writer.add_scalars('cv_{}/loss'.format(index), {'train': train_loss, 'val': val_loss},
+                           epoch)
+
+        writer.add_scalars('cv_{}/score'.format(index), {'train': train_score, 'val': val_score},
                            epoch)
     model.load_state_dict(best_model_wts)
     return model
@@ -126,7 +149,7 @@ def training(config: Config):
                                     num_workers=config.NUM_WORKER)
         dataloaders = {"train": train_dataloader, "val": val_dataloader}
         model = build_model(config)
-        criterion = get_loss(config.loss_type)
+        criterion = get_loss(config)
         optimizer = optim.Adam(model.parameters(), lr=config.lr)
         lr_scheduler = None
         if config.scheduler_type == 'Plateau':
@@ -135,6 +158,26 @@ def training(config: Config):
 
 
 if __name__ == '__main__':
+    # config = Config()
+    # config.model_name = 'efficientnet-b0'
+    # training(config)
+
+    # config = Config()
+    # config.expriment_id = 2
+    # config.N_EPOCH = 30
+    # config.model_name = 'efficientnet-b2'
+    # training(config)
+
+    # config = Config()
+    # config.expriment_id = 3
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'focal'
+    # training(config)
+
     config = Config()
+    config.expriment_id = 4
+    config.N_EPOCH = 50
     config.model_name = 'efficientnet-b0'
+    config.loss_type = 'ce'
     training(config)
