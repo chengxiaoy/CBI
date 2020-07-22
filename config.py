@@ -8,11 +8,12 @@ class Config():
     BATCH_SIZE = 16
     NUM_WORKER = 16
     DATA_PATH = './data/'
-    model_name = "resnet50" # efficientnet-b0
+    model_name = "resnet50"  # efficientnet-b0
     N_EPOCH = 50
     expriment_id = 1
     split_n = 5
     use_half = False
-    loss_type = 'bce'
+    loss_type = 'bce' # focal
     lr = 0.001
-    scheduler_type = 'Plateau'
+    scheduler_type = 'Plateau'  # cos
+    swa = False

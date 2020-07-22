@@ -46,7 +46,7 @@ def train_model(model, dataloader, optimizer, criterion, scheduler, config: Conf
         loss = criterion(output, labels)
         loss.backward()
         optimizer.step()
-        if config.scheduler_type == 'cos':
+        if config.scheduler_type == 'cos' or config.scheduler_type == 'cyc':
             scheduler.step()
         loss_value = loss.item()
         epoch_loss += loss_value
@@ -154,6 +154,14 @@ def training(config: Config):
         lr_scheduler = None
         if config.scheduler_type == 'Plateau':
             lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+
+        if config.scheduler_type == 'cos':
+            lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_dataloader))
+
+        if config.scheduler_type == 'cyc':
+            lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.001,
+                                                             step_size_up=len(train_dataloader) // 2,
+                                                             cycle_momentum=False)
         train(i, model, dataloaders, optimizer, criterion, lr_scheduler, writer=writer, config=config)
 
 
@@ -175,9 +183,31 @@ if __name__ == '__main__':
     # config.loss_type = 'focal'
     # training(config)
 
+    # config = Config()
+    # config.expriment_id = 4
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'ce'
+    # training(config)
+
+    # config = Config()
+    # config.expriment_id = 5
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'bce'
+    # training(config)
+    #
+    # config = Config()
+    # config.expriment_id = 6
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'focal'
+    # training(config)
+
     config = Config()
-    config.expriment_id = 4
+    config.expriment_id = 7
     config.N_EPOCH = 50
     config.model_name = 'efficientnet-b0'
-    config.loss_type = 'ce'
+    config.loss_type = 'focal'
+    config.scheduler_type = 'cyc'
     training(config)
