@@ -25,14 +25,7 @@ from torchvision import models
 from model import *
 from cbi_data import *
 
-def set_seed(seed: int = 42):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)  # type: ignore
-    torch.backends.cudnn.deterministic = True  # type: ignore
-    torch.backends.cudnn.benchmark = True  # type: ignore
+from train import *
 
 
 def get_logger(out_file=None):
@@ -73,7 +66,7 @@ def timer(name: str, logger: Optional[logging.Logger] = None):
 
 
 logger = get_logger("main.log")
-set_seed(1213)
+set_seed(33)
 
 sub = pd.read_csv("./data/sample_submission.csv")
 sub.to_csv("submission.csv", index=False)
@@ -90,41 +83,25 @@ else:
 test = pd.read_csv(DATA_DIR / "test.csv")
 test_audio = DATA_DIR / "test_audio"
 
-test.head()
-
-model_config = {
-    "base_model_name": "resnet50",
-    "pretrained": False,
-    "num_classes": 264
-}
-
 melspectrogram_parameters = {
     "n_mels": 128,
     "fmin": 20,
     "fmax": 16000
 }
 
-weights_path = "./checkpoints/best.pth"
-
-
-
-
-
-
-
-
 
 def prediction_for_clip(test_df: pd.DataFrame,
                         clip: np.ndarray,
                         model: ResNet,
                         mel_params: dict,
-                        threshold=0.5):
+                        config: Config,
+                        threshold=0.5, ):
     dataset = TestDataset(df=test_df,
                           clip=clip,
-                          img_size=224,
+                          img_size=config.IMG_WIDTH,
                           melspectrogram_parameters=mel_params)
     loader = data.DataLoader(dataset, batch_size=1, shuffle=False)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = config.device
 
     model.eval()
     prediction_dict = {}
@@ -181,11 +158,11 @@ def prediction_for_clip(test_df: pd.DataFrame,
 
 def prediction(test_df: pd.DataFrame,
                test_audio: Path,
-               model_config: dict,
+               config: Config,
                mel_params: dict,
                weights_path: str,
                threshold=0.5):
-    model = get_model(model_config, weights_path)
+    model = get_model(config, weights_path)
     unique_audio_id = test_df.audio_id.unique()
 
     warnings.filterwarnings("ignore")
@@ -217,9 +194,22 @@ def prediction(test_df: pd.DataFrame,
     return prediction_df
 
 
+weights_path = "./checkpoints/best.pth"
+
+
+config = Config()
+config.expriment_id = 7
+config.N_EPOCH = 50
+config.model_name = 'efficientnet-b0'
+config.loss_type = 'focal'
+config.scheduler_type = 'cyc'
+training(config)
+
+weights_path = ''
+
 submission = prediction(test_df=test,
                         test_audio=test_audio,
-                        model_config=model_config,
+                        config=config,
                         mel_params=melspectrogram_parameters,
                         weights_path=weights_path,
                         threshold=0.8)

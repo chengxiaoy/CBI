@@ -74,11 +74,11 @@ def build_model(config: Config):
     return model
 
 
-def get_model(config: dict, weights_path: str):
-    model = ResNet(**config)
+def get_model(config: Config, weights_path: str):
+    model = build_model(config)
     checkpoint = torch.load(weights_path)
     model.load_state_dict(checkpoint["model_state_dict"])
-    device = torch.device("cuda")
+    device = config.device
     model.to(device)
     model.eval()
     return model

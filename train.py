@@ -58,7 +58,7 @@ def train_model(model, dataloader, optimizer, criterion, scheduler, config: Conf
     a = np.zeros(train_preds.shape)
     train_preds_index = train_preds.cpu().detach().numpy() > 0.5
     a[train_preds_index] = 1
-    train_score = f1_score(train_true, a, average='macro')
+    train_score = f1_score(train_true, a, average='samples')
     epoch_loss = epoch_loss / len(train_loader)
 
     return epoch_loss, train_score
@@ -85,7 +85,7 @@ def evaluate_model(model, dataloader, criterion, device):
     b = np.zeros(val_preds.shape)
     val_preds_index = val_preds.cpu().detach().numpy() > 0.5
     b[val_preds_index] = 1
-    val_score = f1_score(val_true, b, average='macro')
+    val_score = f1_score(val_true, b, average='samples')
 
     return epoch_loss, val_score
 
@@ -137,6 +137,8 @@ def training(config: Config):
         "fmax": 16000
     }
     for i, (train_index, val_index) in enumerate(splits):
+        if i > 0:
+            continue
         train_df = df.loc[train_index, :].reset_index(drop=True)
         val_df = df.loc[val_index, :].reset_index(drop=True)
         train_dataset = SpectrogramDataset(train_df, datadir=Path('./data/train_audio_resampled'),
@@ -204,8 +206,24 @@ if __name__ == '__main__':
     # config.loss_type = 'focal'
     # training(config)
 
+    # config = Config()
+    # config.expriment_id = 7
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'focal'
+    # config.scheduler_type = 'cyc'
+    # training(config)
+
+
     config = Config()
-    config.expriment_id = 7
+    config.expriment_id = 8
+    config.N_EPOCH = 50
+    config.model_name = 'efficientnet-b0'
+    config.loss_type = 'bce'
+    training(config)
+
+    config = Config()
+    config.expriment_id = 9
     config.N_EPOCH = 50
     config.model_name = 'efficientnet-b0'
     config.loss_type = 'focal'
