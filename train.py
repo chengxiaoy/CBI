@@ -26,7 +26,7 @@ import random
 import numpy as np
 import os
 from tensorboardX import SummaryWriter
-
+import joblib
 from sklearn.metrics import f1_score, accuracy_score
 
 
@@ -56,12 +56,14 @@ def train_model(model, dataloader, optimizer, criterion, scheduler, config: Conf
 
     train_true = train_true.cpu().detach().numpy()
     a = np.zeros(train_preds.shape)
-    train_preds_index = train_preds.cpu().detach().numpy() > 0.5
+    train_preds = train_preds.cpu().detach().numpy()
+
+    train_preds_index = train_preds > 0.5
     a[train_preds_index] = 1
     train_score = f1_score(train_true, a, average='samples')
     epoch_loss = epoch_loss / len(train_loader)
 
-    return epoch_loss, train_score
+    return epoch_loss, train_score, (train_true, train_preds)
 
 
 def evaluate_model(model, dataloader, criterion, device):
@@ -83,19 +85,22 @@ def evaluate_model(model, dataloader, criterion, device):
     epoch_loss = epoch_loss / len(val_loader)
     val_true = val_true.cpu().detach().numpy()
     b = np.zeros(val_preds.shape)
-    val_preds_index = val_preds.cpu().detach().numpy() > 0.5
+    val_preds = val_preds.cpu().detach().numpy()
+    val_preds_index = val_preds > 0.5
     b[val_preds_index] = 1
     val_score = f1_score(val_true, b, average='samples')
 
-    return epoch_loss, val_score
+    return epoch_loss, val_score, (val_true, val_preds)
 
 
 def train(index, model, dataloaders, optimizer, criterion, scheduler, writer, config: Config):
     min_loss = float('inf')
     best_model_wts = copy.deepcopy(model.state_dict())
+    metric_dict = {}
     for epoch in range(config.N_EPOCH):
-        train_loss, train_score = train_model(model, dataloaders['train'], optimizer, criterion, scheduler, config)
-        val_loss, val_score = evaluate_model(model, dataloaders['val'], criterion, config.device)
+        train_loss, train_score, train_metric = train_model(model, dataloaders['train'], optimizer, criterion,
+                                                            scheduler, config)
+        val_loss, val_score, val_metric = evaluate_model(model, dataloaders['val'], criterion, config.device)
         print("train_loss:{} val_loss:{}".format(train_loss, val_loss))
         if val_loss < min_loss:
             min_loss = val_loss
@@ -109,6 +114,11 @@ def train(index, model, dataloaders, optimizer, criterion, scheduler, writer, co
 
         writer.add_scalars('cv_{}/score'.format(index), {'train': train_score, 'val': val_score},
                            epoch)
+        metric_dict[epoch] = {"train": train_metric, "val": val_metric}
+        metric_file_path = "./checkpoints/exp_{}_index_{}_metric_data.pkl".format(config.expriment_id, index)
+
+        joblib.dump(metric_dict, metric_file_path)
+
     model.load_state_dict(best_model_wts)
     return model
 
@@ -214,18 +224,26 @@ if __name__ == '__main__':
     # config.scheduler_type = 'cyc'
     # training(config)
 
+    # config = Config()
+    # config.expriment_id = 8
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'bce'
+    # training(config)
+
+    # config = Config()
+    # config.expriment_id = 9
+    # config.N_EPOCH = 50
+    # config.model_name = 'efficientnet-b0'
+    # config.loss_type = 'focal'
+    # config.scheduler_type = 'cyc'
+    # training(config)
 
     config = Config()
-    config.expriment_id = 8
+    config.expriment_id = 10
     config.N_EPOCH = 50
     config.model_name = 'efficientnet-b0'
     config.loss_type = 'bce'
-    training(config)
-
-    config = Config()
-    config.expriment_id = 9
-    config.N_EPOCH = 50
-    config.model_name = 'efficientnet-b0'
-    config.loss_type = 'focal'
     config.scheduler_type = 'cyc'
+
     training(config)
