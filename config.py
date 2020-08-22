@@ -13,7 +13,9 @@ class Config():
     expriment_id = 1
     split_n = 5
     use_half = False
-    loss_type = 'bce' # focal
+    loss_type = 'bce'  # focal, arcface
     lr = 0.001
     scheduler_type = 'Plateau'  # cos
     swa = False
+    cbr = False
+    se = False

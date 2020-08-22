@@ -46,20 +46,26 @@ def train_model(model, dataloader, optimizer, criterion, scheduler, config: Conf
         loss = criterion(output, labels)
         loss.backward()
         optimizer.step()
-        if config.scheduler_type == 'cos' or config.scheduler_type == 'cyc':
+        if config.scheduler_type == 'cyc':
             scheduler.step()
         loss_value = loss.item()
         epoch_loss += loss_value
 
         train_true = torch.cat([train_true, labels], 0)
-        train_preds = torch.cat([train_preds, output['multilabel_proba']], 0)
+        if config.loss_type in ['arcface', 'ce']:
+            train_preds = torch.cat([train_preds, output['logits']], 0)
+        elif config.loss_type in ['bce', 'focal']:
+            train_preds = torch.cat([train_preds, output['multilabel_proba']], 0)
 
     train_true = train_true.cpu().detach().numpy()
     a = np.zeros(train_preds.shape)
     train_preds = train_preds.cpu().detach().numpy()
 
-    train_preds_index = train_preds > 0.5
-    a[train_preds_index] = 1
+    if config.loss_type in ['bce', 'focal']:
+        train_preds_index = train_preds > 0.5
+        a[train_preds_index] = 1
+    elif config.loss_type in ['arcface', 'ce']:
+        a[np.arange(len(train_preds)), train_preds.argmax(1)] = 1
     train_score = f1_score(train_true, a, average='samples')
     epoch_loss = epoch_loss / len(train_loader)
 
@@ -80,14 +86,21 @@ def evaluate_model(model, dataloader, criterion, device):
             epoch_loss += loss.item()
 
             val_true = torch.cat([val_true, labels], 0)
-            val_preds = torch.cat([val_preds, output['multilabel_proba']], 0)
+            if config.loss_type in ['arcface', 'ce']:
+                val_preds = torch.cat([val_preds, output['logits']], 0)
+            elif config.loss_type in ['bce', "focal"]:
+                val_preds = torch.cat([val_preds, output['multilabel_proba']], 0)
 
     epoch_loss = epoch_loss / len(val_loader)
     val_true = val_true.cpu().detach().numpy()
     b = np.zeros(val_preds.shape)
     val_preds = val_preds.cpu().detach().numpy()
-    val_preds_index = val_preds > 0.5
-    b[val_preds_index] = 1
+    if config.loss_type in ['bce', "focal"]:
+        train_preds_index = val_preds > 0.5
+        b[train_preds_index] = 1
+    elif config.loss_type in ['arcface', 'ce']:
+        b[np.arange(len(val_preds)), val_preds.argmax(1)] = 1
+
     val_score = f1_score(val_true, b, average='samples')
 
     return epoch_loss, val_score, (val_true, val_preds)
@@ -102,6 +115,7 @@ def train(index, model, dataloaders, optimizer, criterion, scheduler, writer, co
                                                             scheduler, config)
         val_loss, val_score, val_metric = evaluate_model(model, dataloaders['val'], criterion, config.device)
         print("train_loss:{} val_loss:{}".format(train_loss, val_loss))
+        print("train_score:{} val_score:{}".format(train_score, val_score))
         if val_loss < min_loss:
             min_loss = val_loss
             torch.save(model.state_dict(),
@@ -138,9 +152,7 @@ def training(config: Config):
     df = pd.read_csv('./data/resampled_train.csv')
     skf = StratifiedKFold(n_splits=config.split_n, random_state=33, shuffle=True)
     splits = skf.split(df, y=df['ebird_code'].values)
-
     writer = SummaryWriter(logdir=os.path.join("./board/", str(config.expriment_id)))
-
     melspectrogram_parameters = {
         "n_mels": 128,
         "fmin": 20,
@@ -168,7 +180,7 @@ def training(config: Config):
             lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
         if config.scheduler_type == 'cos':
-            lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_dataloader))
+            lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
 
         if config.scheduler_type == 'cyc':
             lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.001,
@@ -178,72 +190,43 @@ def training(config: Config):
 
 
 if __name__ == '__main__':
-    # config = Config()
-    # config.model_name = 'efficientnet-b0'
-    # training(config)
+    config = Config()
+    config.expriment_id = 21
+    config.N_EPOCH = 50
+    config.model_name = 'resnet34'
+    config.loss_type = 'bce'
+    config.scheduler_type = 'cyc'
+    training(config)
+
+    config = Config()
+    config.expriment_id = 22
+    config.N_EPOCH = 50
+    config.model_name = 'resnet34'
+    config.loss_type = 'bce'
+    config.cbr = True
+    config.scheduler_type = 'cyc'
+    training(config)
 
     # config = Config()
-    # config.expriment_id = 2
-    # config.N_EPOCH = 30
-    # config.model_name = 'efficientnet-b2'
-    # training(config)
-
-    # config = Config()
-    # config.expriment_id = 3
+    # config.expriment_id = 23
     # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
-    # config.loss_type = 'focal'
-    # training(config)
-
-    # config = Config()
-    # config.expriment_id = 4
-    # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
-    # config.loss_type = 'ce'
-    # training(config)
-
-    # config = Config()
-    # config.expriment_id = 5
-    # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
-    # config.loss_type = 'bce'
+    # config.model_name = 'resnet34'
+    # config.loss_type = 'arcface'
+    # config.scheduler_type = 'cyc'
     # training(config)
     #
     # config = Config()
-    # config.expriment_id = 6
+    # config.expriment_id = 24
     # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
-    # config.loss_type = 'focal'
-    # training(config)
-
-    # config = Config()
-    # config.expriment_id = 7
-    # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
+    # config.model_name = 'resnet34'
     # config.loss_type = 'focal'
     # config.scheduler_type = 'cyc'
     # training(config)
-
+    #
     # config = Config()
-    # config.expriment_id = 8
+    # config.expriment_id = 25
     # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
-    # config.loss_type = 'bce'
-    # training(config)
-
-    # config = Config()
-    # config.expriment_id = 9
-    # config.N_EPOCH = 50
-    # config.model_name = 'efficientnet-b0'
-    # config.loss_type = 'focal'
+    # config.model_name = 'resnet34'
+    # config.loss_type = 'arcface'
     # config.scheduler_type = 'cyc'
     # training(config)
-
-    config = Config()
-    config.expriment_id = 10
-    config.N_EPOCH = 50
-    config.model_name = 'efficientnet-b0'
-    config.loss_type = 'bce'
-    config.scheduler_type = 'cyc'
-
-    training(config)
